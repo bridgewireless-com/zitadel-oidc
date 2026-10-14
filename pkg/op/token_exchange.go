@@ -393,7 +393,7 @@ func CreateTokenExchangeResponse(
 
 		tokenType = oidc.BearerToken
 	case oidc.IDTokenType:
-		token, err = CreateIDToken(ctx, IssuerFromContext(ctx), tokenExchangeRequest, client.IDTokenLifetime(), "", "", creator.Storage(), client)
+		token, err = createIDToken(ctx, IssuerFromContext(ctx), tokenExchangeRequest, client.IDTokenLifetime(), "", "", creator.Storage(), client, idTokenAudienceClientIDOnly(creator))
 		if err != nil {
 			return nil, err
 		}

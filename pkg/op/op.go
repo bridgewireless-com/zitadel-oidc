@@ -184,6 +184,14 @@ type Config struct {
 	DeviceAuthorization               DeviceAuthorizationConfig
 	BackChannelLogoutSupported        bool
 	BackChannelLogoutSessionSupported bool
+
+	// AccessTokenTypeRFC9068 signs JWT access tokens with the JOSE header
+	// typ "at+jwt" (RFC 9068) instead of "JWT". ID tokens are not affected.
+	AccessTokenTypeRFC9068 bool
+	// IDTokenAudienceClientIDOnly restricts the "aud" of ID tokens to the
+	// client ID. By default the audience of the auth request is used as well,
+	// so an ID token could carry a resource server audience (e.g. RFC 8707).
+	IDTokenAudienceClientIDOnly bool
 }
 
 // Endpoints defines endpoint routes.
@@ -451,6 +459,14 @@ func (o *Provider) BackChannelLogoutSupported() bool {
 
 func (o *Provider) BackChannelLogoutSessionSupported() bool {
 	return o.config.BackChannelLogoutSessionSupported
+}
+
+func (o *Provider) AccessTokenTypeRFC9068() bool {
+	return o.config.AccessTokenTypeRFC9068
+}
+
+func (o *Provider) IDTokenAudienceClientIDOnly() bool {
+	return o.config.IDTokenAudienceClientIDOnly
 }
 
 func (o *Provider) Storage() Storage {

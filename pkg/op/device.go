@@ -349,7 +349,7 @@ func CreateDeviceTokenResponse(ctx context.Context, tokenRequest TokenRequest, c
 
 	// TODO(v4): remove type assertion
 	if idTokenRequest, ok := tokenRequest.(IDTokenRequest); ok && slices.Contains(tokenRequest.GetScopes(), oidc.ScopeOpenID) {
-		response.IDToken, err = CreateIDToken(ctx, IssuerFromContext(ctx), idTokenRequest, client.IDTokenLifetime(), accessToken, "", creator.Storage(), client)
+		response.IDToken, err = createIDToken(ctx, IssuerFromContext(ctx), idTokenRequest, client.IDTokenLifetime(), accessToken, "", creator.Storage(), client, idTokenAudienceClientIDOnly(creator))
 		if err != nil {
 			return nil, err
 		}

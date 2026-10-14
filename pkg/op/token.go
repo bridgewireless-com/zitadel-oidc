@@ -5,6 +5,8 @@ import (
 	"slices"
 	"time"
 
+	jose "github.com/go-jose/go-jose/v4"
+
 	"github.com/zitadel/oidc/v3/pkg/crypto"
 	"github.com/zitadel/oidc/v3/pkg/oidc"
 )
@@ -12,6 +14,29 @@ import (
 type TokenCreator interface {
 	Storage() Storage
 	Crypto() Crypto
+}
+
+// TokenCreatorOptions can optionally be implemented by a [TokenCreator]
+// (the [Provider] does, driven by [Config]) to opt in to stricter token formats.
+// Creators that do not implement it get the historic behavior.
+type TokenCreatorOptions interface {
+	// AccessTokenTypeRFC9068 reports whether JWT access tokens are signed
+	// with the JOSE header typ "at+jwt" (RFC 9068) instead of "JWT".
+	AccessTokenTypeRFC9068() bool
+	// IDTokenAudienceClientIDOnly reports whether the audience of ID tokens
+	// is restricted to the client ID, instead of the request's audience
+	// (which usually carries the resource server of the access token).
+	IDTokenAudienceClientIDOnly() bool
+}
+
+func accessTokenTypeRFC9068(creator TokenCreator) bool {
+	o, ok := creator.(TokenCreatorOptions)
+	return ok && o.AccessTokenTypeRFC9068()
+}
+
+func idTokenAudienceClientIDOnly(creator TokenCreator) bool {
+	o, ok := creator.(TokenCreatorOptions)
+	return ok && o.IDTokenAudienceClientIDOnly()
 }
 
 type TokenRequest interface {
@@ -40,7 +65,7 @@ func CreateTokenResponse(ctx context.Context, request IDTokenRequest, client Cli
 			return nil, err
 		}
 	}
-	idToken, err := CreateIDToken(ctx, IssuerFromContext(ctx), request, client.IDTokenLifetime(), accessToken, code, creator.Storage(), client)
+	idToken, err := createIDToken(ctx, IssuerFromContext(ctx), request, client.IDTokenLifetime(), accessToken, code, creator.Storage(), client, idTokenAudienceClientIDOnly(creator))
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +150,7 @@ func CreateAccessToken(ctx context.Context, tokenRequest TokenRequest, accessTok
 	}
 	validity = exp.Add(clockSkew).Sub(time.Now().UTC())
 	if accessTokenType == AccessTokenTypeJWT {
-		accessToken, err = CreateJWT(ctx, IssuerFromContext(ctx), tokenRequest, exp, id, client, creator.Storage())
+		accessToken, err = createJWT(ctx, IssuerFromContext(ctx), tokenRequest, exp, id, client, creator.Storage(), accessTokenTypeRFC9068(creator))
 		return accessToken, newRefreshToken, validity, err
 	}
 	_, span = Tracer.Start(ctx, "CreateBearerToken")
@@ -142,7 +167,13 @@ type TokenActorRequest interface {
 	GetActor() *oidc.ActorClaims
 }
 
+// CreateJWT creates a JWT access token with the JOSE header typ "JWT".
+// Use [Config.AccessTokenTypeRFC9068] to issue "at+jwt" tokens through the [Provider].
 func CreateJWT(ctx context.Context, issuer string, tokenRequest TokenRequest, exp time.Time, id string, client AccessTokenClient, storage Storage) (string, error) {
+	return createJWT(ctx, issuer, tokenRequest, exp, id, client, storage, false)
+}
+
+func createJWT(ctx context.Context, issuer string, tokenRequest TokenRequest, exp time.Time, id string, client AccessTokenClient, storage Storage, rfc9068 bool) (string, error) {
 	ctx, span := Tracer.Start(ctx, "CreateJWT")
 	defer span.End()
 
@@ -182,7 +213,11 @@ func CreateJWT(ctx context.Context, issuer string, tokenRequest TokenRequest, ex
 	if err != nil {
 		return "", err
 	}
-	signer, err := SignerFromKey(signingKey)
+	typ := jose.ContentType(JWTType)
+	if rfc9068 {
+		typ = AccessTokenJWTType
+	}
+	signer, err := SignerFromKeyWithType(signingKey, typ)
 	if err != nil {
 		return "", err
 	}
@@ -199,6 +234,12 @@ type IDTokenRequest interface {
 }
 
 func CreateIDToken(ctx context.Context, issuer string, request IDTokenRequest, validity time.Duration, accessToken, code string, storage Storage, client Client) (string, error) {
+	return createIDToken(ctx, issuer, request, validity, accessToken, code, storage, client, false)
+}
+
+// createIDToken creates the ID token. If audClientIDOnly is set, the audience is
+// exactly [client_id] and the request's audience is ignored.
+func createIDToken(ctx context.Context, issuer string, request IDTokenRequest, validity time.Duration, accessToken, code string, storage Storage, client Client, audClientIDOnly bool) (string, error) {
 	ctx, span := Tracer.Start(ctx, "CreateIDToken")
 	defer span.End()
 
@@ -208,7 +249,11 @@ func CreateIDToken(ctx context.Context, issuer string, request IDTokenRequest, v
 		acr = authRequest.GetACR()
 		nonce = authRequest.GetNonce()
 	}
-	claims := oidc.NewIDTokenClaims(issuer, request.GetSubject(), request.GetAudience(), exp, request.GetAuthTime(), nonce, acr, request.GetAMR(), request.GetClientID(), client.ClockSkew())
+	audience := request.GetAudience()
+	if audClientIDOnly {
+		audience = nil // NewIDTokenClaims appends the client ID
+	}
+	claims := oidc.NewIDTokenClaims(issuer, request.GetSubject(), audience, exp, request.GetAuthTime(), nonce, acr, request.GetAMR(), request.GetClientID(), client.ClockSkew())
 	if actorReq, ok := request.(TokenActorRequest); ok {
 		claims.Actor = actorReq.GetActor()
 	}
