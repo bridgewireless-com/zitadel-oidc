@@ -70,6 +70,15 @@ func CreateTokenResponse(ctx context.Context, request IDTokenRequest, client Cli
 		return nil, err
 	}
 
+	tokenType := oidc.BearerToken
+	if createAccessToken {
+		if storage, ok := creator.Storage().(CanSetAccessTokenType); ok {
+			if customType := storage.AccessTokenType(ctx, request); customType != "" {
+				tokenType = customType
+			}
+		}
+	}
+
 	var state string
 	if authRequest, ok := request.(AuthRequest); ok {
 		err = creator.Storage().DeleteAuthRequest(ctx, authRequest.GetID())
@@ -87,7 +96,7 @@ func CreateTokenResponse(ctx context.Context, request IDTokenRequest, client Cli
 		AccessToken:  accessToken,
 		IDToken:      idToken,
 		RefreshToken: newRefreshToken,
-		TokenType:    oidc.BearerToken,
+		TokenType:    tokenType,
 		ExpiresIn:    exp,
 		State:        state,
 		Scope:        request.GetScopes(),

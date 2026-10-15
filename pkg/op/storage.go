@@ -157,6 +157,13 @@ type CanGetPrivateClaimsFromRequest interface {
 	GetPrivateClaimsFromRequest(ctx context.Context, request TokenRequest, restrictedScopes []string) (map[string]any, error)
 }
 
+// CanSetAccessTokenType is an optional Storage extension. When implemented, its result (if not empty)
+// replaces "Bearer" as the token_type of the token response, e.g. "DPoP" (RFC 9449) for a sender-constrained
+// access token. It is called after the tokens were created, with the same context.
+type CanSetAccessTokenType interface {
+	AccessTokenType(ctx context.Context, request TokenRequest) string
+}
+
 // Storage is a required parameter for NewOpenIDProvider(). In addition to the
 // embedded interfaces below, if the passed Storage implements ClientCredentialsStorage
 // then the grant type "client_credentials" will be supported. In that case, the access

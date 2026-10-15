@@ -17,6 +17,9 @@ const (
 	// BearerToken defines the token_type `Bearer`, which is returned in a successful token response
 	BearerToken = "Bearer"
 
+	// DPoPTokenType defines the token_type for a DPoP-bound access token (RFC 9449).
+	DPoPTokenType = "DPoP"
+
 	PrefixBearer = BearerToken + " "
 )
 
